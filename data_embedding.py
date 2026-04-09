@@ -11,8 +11,8 @@ from qdrant_client.models import VectorParams, Distance, PointStruct
 # =========================
 FILE_PATH = "/home/rmrobot/Desktop/Rajesh/AI_GRC/file/Combined_EU_NIST_ISO_AI_Compliance_2311.xlsx"
 MODEL_PATH = "/home/rmrobot/Desktop/Rajesh/AI_GRC/models/bge-large"
-COLLECTION_NAME = "grc_docs_v2"
-QDRANT_PATH = "./data_v2"
+COLLECTION_NAME = "grc_docs"
+QDRANT_PATH = "./data"
 BATCH_SIZE = 100
 
 # Skip dashboard / utility sheets
@@ -52,6 +52,15 @@ FFILL_KEYWORDS = ["clause", "subclause", "number", "title", "topic", "section"]
 
 # Maximum empty/TBD ratio for a column to be included
 MAX_TBD_RATIO = 0.5
+
+# Per-sheet columns to force-include regardless of TBD ratio or keyword matching
+# (column index → descriptive label for embedding text)
+SHEET_FORCE_COLUMNS = {
+    "ISO-42K-Annex A": {
+        5: "Applicable to Developer/Provider AI systems",   # 'provider' col — only 14/56 filled
+        6: "Applicable to AI Consumer/User",                # 'user' col — 38/56 filled
+    }
+}
 
 # =========================
 # LOAD MODEL
@@ -130,35 +139,53 @@ def preprocess_df(df, sheet):
                 series = series.ffill().fillna("")
                 df.iloc[:, i] = series
 
+    # Expand applicability columns to descriptive text so they're searchable
+    # "Applicable" / "Not Applicable" → full phrase that vector/BM25 can match
+    if sheet in SHEET_FORCE_COLUMNS:
+        for col_pos, label in SHEET_FORCE_COLUMNS[sheet].items():
+            if col_pos < len(df.columns):
+                def expand_applicability(val, lbl=label):
+                    v = str(val).strip().lower()
+                    if v == "applicable":
+                        return lbl
+                    elif v == "not applicable":
+                        return f"Not {lbl}"
+                    return ""   # empty → skipped during embedding
+                df.iloc[:, col_pos] = df.iloc[:, col_pos].apply(expand_applicability)
+
     return df
 
-def select_content_columns(df):
+def select_content_columns(df, sheet=""):
     """Return a sub-DataFrame with only meaningful, non-TBD-heavy columns.
 
     Logic:
     1. Always include columns A-E (positions 0-4).
     2. Include any column whose name matches a CONTENT_KEYWORD.
-    3. Drop columns where >{MAX_TBD_RATIO} of values are placeholders
+    3. Force-include sheet-specific columns from SHEET_FORCE_COLUMNS (bypasses TBD filter).
+    4. Drop columns where >{MAX_TBD_RATIO} of values are placeholders
        (after forward-fill, structural columns will pass this check).
     """
     n_cols = len(df.columns)
     selected = set(range(min(5, n_cols)))  # always include A-E
+    force_include = set(SHEET_FORCE_COLUMNS.get(sheet, {}).keys())
 
     for i, col in enumerate(df.columns):
         col_lower = str(col).strip().lower()
         if any(kw in col_lower for kw in CONTENT_KEYWORDS):
             selected.add(i)
 
-    # Filter out high-placeholder columns
+    # Filter out high-placeholder columns; force-included columns skip this check
     final_positions = []
-    for pos in sorted(selected):
+    for pos in sorted(selected | force_include):
         col_data = df.iloc[:, pos]
         total = len(col_data)
         if total == 0:
             continue
-        tbd_count = sum(1 for v in col_data if is_placeholder(str(v).strip()))
-        if (tbd_count / total) < MAX_TBD_RATIO:
-            final_positions.append(pos)
+        if pos not in force_include:
+            tbd_count = sum(1 for v in col_data if is_placeholder(str(v).strip()))
+            if (tbd_count / total) >= MAX_TBD_RATIO:
+                continue
+        final_positions.append(pos)
 
     return df.iloc[:, final_positions]
 
@@ -210,7 +237,7 @@ for sheet in xls.sheet_names:
     print(f"  After preprocess: {len(df)} rows")
 
     # Step 2: select content columns only
-    df_focused = select_content_columns(df)
+    df_focused = select_content_columns(df, sheet)
     print(f"  Selected columns ({len(df_focused.columns)}): {list(df_focused.columns)}")
 
     col_names = list(df_focused.columns)

@@ -9,8 +9,8 @@ from rank_bm25 import BM25Okapi
 # =========================
 # CONFIG
 # =========================
-QDRANT_PATH = "./data_v2"
-COLLECTION_NAME = "grc_docs_v2"
+QDRANT_PATH = "./data"
+COLLECTION_NAME = "grc_docs"
 EMBED_MODEL_PATH = "/home/rmrobot/Desktop/Rajesh/AI_GRC/models/bge-large"
 RERANK_MODEL    = "/home/rmrobot/Desktop/Rajesh/AI_GRC/models/bge-reranker-large"
 OLLAMA_MODEL    = "mistral-small3.2"
@@ -40,6 +40,27 @@ SAMPLE_QUESTIONS = {
         "Give me clause 4 of ISO 42K.",
         "What does ISO 42K Annex A A.2.2 require?",
         "What are the AI policy requirements under ISO?",
+        "List all controls for ISO 42001 Annex A",
+        "Give the topic coverage in Annex A",
+        "Give Controls applicable to Developer/Provider",
+        "Give Controls applicable to AI Consumer/User",
+        "Provide assessment questions for Annex A section A.2",
+        "Give me the management clauses for ISO 42001",
+        "What are the assessment questions for auditing management clauses",
+        "How many controls does ISO 42001 have?",
+        "Provide terms and definitions for ISO 42001",
+        "What are the AI objectives for an organization under ISO 42001",
+        "What are the risk sources for AI in an enterprise",
+    ],
+    "ISO Implementation": [
+        "Give me an ISO 42001 Overview",
+        "Walk me through the Implementation Phases for ISO 42001",
+        "Tell me about Phase 1: Preparation & Current State Assessment",
+        "What is AI Risk Assessment Methodology",
+        "Understanding the ISO Certification Timeline",
+        "Tell me about Phase 5: Certification Audit",
+        "What are the Benefits of ISO/IEC 42001 Implementation",
+        "What is AI Ethics and Responsible AI",
     ],
     "Cross-Framework": [
         "If I build a facial recognition system, what compliance requirements apply?",

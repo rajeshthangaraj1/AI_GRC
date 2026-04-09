@@ -18,17 +18,18 @@ A fully local, privacy-first AI chatbot for querying **EU AI Act**, **NIST AI RM
 ## Architecture
 
 ```
-Excel Source Data
+Excel + PPT Source Data
        │
        ▼
-data_embedding_v2.py          # Ingestion pipeline
-  ├── Sheet parsing & cleaning
+data_embedding.py             # Ingestion pipeline (Excel)
+data_embedding_ppt.py         # Ingestion pipeline (PPT slides)
+  ├── Sheet/slide parsing & cleaning
   ├── Forward-fill ISO clause hierarchy
   ├── BGE-Large embeddings (CUDA)
-  └── Qdrant vector store (./data_v2)
+  └── Qdrant vector store (./data, collection: grc_docs)
        │
        ▼
-app_v2.py                     # Streamlit app
+app.py                        # Streamlit app
   ├── BM25 index (in-memory)
   ├── Hybrid retrieval (BM25 + Qdrant)
   ├── BGE-Reranker-Large cross-encoder
@@ -57,15 +58,17 @@ app_v2.py                     # Streamlit app
 
 ```
 AI_GRC/
-├── app_v2.py                  # Main Streamlit app (final version)
-├── data_embedding_v2.py       # Data ingestion & embedding pipeline (final version)
+├── app.py                     # Main Streamlit app
+├── data_embedding.py          # Data ingestion pipeline (Excel)
+├── data_embedding_ppt.py      # Data ingestion pipeline (PPT slides)
 ├── db.py                      # Utility: model download helper
 ├── file/
 │   └── Combined_EU_NIST_ISO_AI_Compliance_2311.xlsx   # Source compliance data
+├── GRC_Requirement/           # ISO 42001 PPT files (5 files)
 ├── models/
 │   ├── bge-large/             # BAAI/bge-large-en-v1.5 (downloaded locally)
 │   └── bge-reranker-large/    # BAAI/bge-reranker-large (downloaded locally)
-├── data_v2/                   # Qdrant persistent vector store
+├── data/                      # Qdrant persistent vector store
 └── requirements.txt
 ```
 
@@ -107,15 +110,16 @@ This downloads `BAAI/bge-large-en-v1.5` and `BAAI/bge-reranker-large` into `./mo
 ### 4. Ingest compliance data
 
 ```bash
-python data_embedding_v2.py
+python data_embedding.py        # Excel → grc_docs collection
+python data_embedding_ppt.py    # PPT slides → upserted into same collection
 ```
 
-This reads the Excel file, embeds all compliance controls, and stores them in `./data_v2/` (Qdrant).
+Run `data_embedding.py` first (creates the collection), then `data_embedding_ppt.py` (upserts PPT slides).
 
 ### 5. Run the app
 
 ```bash
-streamlit run app_v2.py
+streamlit run app.py
 ```
 
 Open `http://localhost:8501` in your browser.
@@ -124,22 +128,24 @@ Open `http://localhost:8501` in your browser.
 
 ## Data Source
 
-The source Excel file (`Combined_EU_NIST_ISO_AI_Compliance_2311.xlsx`) contains structured compliance controls across:
+**Excel** (`Combined_EU_NIST_ISO_AI_Compliance_2311.xlsx`) — structured compliance controls:
 
 - **EU AI Act** — prohibited practices, high-risk requirements, transparency obligations
 - **NIST AI RMF** — GOVERN, MAP, MEASURE, MANAGE functions
 - **ISO 42001** — management clauses and Annex A controls
 
+**PPT files** (`GRC_Requirement/`) — ISO 42001 implementation content (5 decks covering implementation phases, certification process, training, and integrated management systems)
+
 ---
 
 ## Configuration
 
-Key constants in `app_v2.py` and `data_embedding_v2.py`:
+Key constants in `app.py` and `data_embedding.py`:
 
 | Constant          | Default                  | Description                          |
 |-------------------|--------------------------|--------------------------------------|
-| `QDRANT_PATH`     | `./data_v2`              | Qdrant persistent storage path       |
-| `COLLECTION_NAME` | `grc_docs_v2`            | Qdrant collection name               |
+| `QDRANT_PATH`     | `./data`                 | Qdrant persistent storage path       |
+| `COLLECTION_NAME` | `grc_docs`            | Qdrant collection name               |
 | `EMBED_MODEL_PATH`| `./models/bge-large`     | Local path to BGE-Large model        |
 | `RERANK_MODEL`    | `./models/bge-reranker-large` | Local path to reranker model    |
 | `OLLAMA_MODEL`    | `mistral-small3.2`       | Ollama model name                    |

@@ -17,9 +17,8 @@ env/
 # Models (large binary files — download via db.py)
 models/
 
-# Qdrant vector stores (regenerate via data_embedding_v2.py)
+# Qdrant vector stores (regenerate via data_embedding.py)
 data/
-data_v2/
 qdrant_data/
 *.sqlite
 
@@ -46,11 +45,11 @@ desktop.ini
 # Logs
 *.log
 
-# Old / dev versions (final version is _v2)
-app.py
+# Old / dev versions (kept in old/ folder)
 app_v1.py
-data_embedding.py
+app_v2.py
 data_embedding_v1.py
+data_embedding_v2.py
 
 # Excluded folders
 old/
