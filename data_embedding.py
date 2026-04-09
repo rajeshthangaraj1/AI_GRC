@@ -308,7 +308,10 @@ print(f"\nDONE: {total} records stored | {skipped_rows} rows skipped (empty/TBD)
 # =========================
 # VERIFY
 # =========================
-scroll = client.scroll(collection_name=COLLECTION_NAME, limit=20000)
+MAX_SCROLL = 20000
+scroll = client.scroll(collection_name=COLLECTION_NAME, limit=MAX_SCROLL)
+if len(scroll[0]) == MAX_SCROLL:
+    print(f"[WARN] Scroll hit limit of {MAX_SCROLL}. Collection may have more points — stats below may be incomplete.")
 
 frameworks = {}
 for p in scroll[0]:

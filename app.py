@@ -16,6 +16,16 @@ RERANK_MODEL    = "/home/rmrobot/Desktop/Rajesh/AI_GRC/models/bge-reranker-large
 OLLAMA_MODEL    = "mistral-small3.2"
 TOP_K_RETRIEVE  = 40
 TOP_K_RERANK    = 10
+RERANK_MIN_SCORE = 0.0   # docs below this reranker score are dropped
+MAX_SCROLL       = 20000  # warn if collection grows beyond this
+HISTORY_TURNS    = 4      # number of prior conversation turns passed to LLM
+
+# Keywords for auto-detecting framework from query text
+FRAMEWORK_KEYWORDS = {
+    "EU AI Act":   ["eu ai act", "eu act", "prohibited ai", "high-risk ai", "article 6", "article 9"],
+    "NIST AI RMF": ["nist", "rmf", "ai rmf", "govern function", "map function", "measure function", "manage function"],
+    "ISO":         ["iso", "42001", "42k", "annex a", "aims", "iso/iec"],
+}
 
 FRAMEWORK_COLORS = {
     "EU AI Act":    "#1565C0",
@@ -167,7 +177,10 @@ def load_models():
     qdrant      = QdrantClient(path=QDRANT_PATH)
     llm         = OllamaLLM(model=OLLAMA_MODEL)
 
-    scroll = qdrant.scroll(collection_name=COLLECTION_NAME, limit=20000)
+    scroll = qdrant.scroll(collection_name=COLLECTION_NAME, limit=MAX_SCROLL)
+    if len(scroll[0]) == MAX_SCROLL:
+        import warnings
+        warnings.warn(f"BM25 index scroll hit limit of {MAX_SCROLL}. Some documents may be missing from BM25 index.")
     all_docs = []
     framework_counts = {}
 
@@ -206,7 +219,21 @@ if "pending_question" not in st.session_state:
 def refine_query(query):
     return query + " compliance control risk requirement"
 
+def detect_framework(query):
+    """Return a framework filter list if the query clearly targets one framework.
+    Returns None if query is ambiguous or targets multiple frameworks."""
+    q = query.lower()
+    matched = []
+    for fw, keywords in FRAMEWORK_KEYWORDS.items():
+        if any(kw in q for kw in keywords):
+            matched.append(fw)
+    return matched if len(matched) == 1 else None
+
 def hybrid_retrieve(query, framework_filter=None):
+    # Auto-detect framework if user hasn't manually restricted
+    if not framework_filter:
+        framework_filter = detect_framework(query)
+
     refined = refine_query(query)
 
     # BM25
@@ -251,12 +278,24 @@ def rerank_docs(query, docs):
     pairs  = [[query, d["text"]] for d in docs]
     scores = reranker.predict(pairs)
     ranked = sorted(zip(scores, docs), reverse=True)
-    return [d for _, d in ranked[:TOP_K_RERANK]]
+    # Keep only docs above the minimum score threshold
+    filtered = [d for s, d in ranked if s > RERANK_MIN_SCORE]
+    # Always return at least top-3 as fallback even if all scores are low
+    return filtered[:TOP_K_RERANK] if filtered else [d for _, d in ranked[:3]]
 
 def build_context(docs):
     return "\n\n---\n\n".join(d["text"] for d in docs)
 
-def generate_answer(query, context):
+def generate_answer(query, context, history=None):
+    # Build conversation history block (last N turns, truncated to avoid token bloat)
+    history_block = ""
+    if history:
+        lines = []
+        for msg in history[-(HISTORY_TURNS * 2):]:   # last N user+assistant pairs
+            role = "User" if msg["role"] == "user" else "Assistant"
+            lines.append(f"{role}: {msg['content'][:400]}")
+        history_block = "CONVERSATION HISTORY (recent exchanges):\n" + "\n".join(lines) + "\n\n"
+
     prompt = f"""You are an AI Governance, Risk, and Compliance (GRC) expert assistant.
 
 Rules:
@@ -265,13 +304,14 @@ Rules:
 - If the answer is not in the context, say: "This information is not available in the loaded compliance documents."
 - NEVER include placeholder values like TBD, TBA, N/A, "Not Assessed" in your answer — skip those fields entirely
 - Be clear, structured, and professional
+- If the question refers to a previous answer (e.g. "tell me more", "what about point 3"), use the conversation history above
 
 If a checklist or list is requested:
 - Use bullet points or numbered lists
 - Include clause/control ID, requirement, and risk level where available
 
 ----------------
-CONTEXT:
+{history_block}CONTEXT:
 {context}
 
 ----------------
@@ -281,7 +321,7 @@ QUESTION:
 ANSWER:"""
     return llm.invoke(prompt)
 
-def rag_pipeline(query, framework_filter=None):
+def rag_pipeline(query, framework_filter=None, history=None):
     docs, refined = hybrid_retrieve(query, framework_filter)
     if not docs:
         return "No documents retrieved.", [], refined
@@ -291,7 +331,7 @@ def rag_pipeline(query, framework_filter=None):
         return "No relevant documents found after reranking.", [], refined
 
     context = build_context(docs)
-    answer  = generate_answer(query, context)
+    answer  = generate_answer(query, context, history=history)
 
     # Extract unique sources for attribution
     sources = []
@@ -421,7 +461,9 @@ if user_input:
     with st.chat_message("assistant"):
         with st.spinner("Analyzing compliance requirements..."):
             try:
-                answer, sources, refined = rag_pipeline(user_input, framework_filter)
+                # Pass all messages except the current one as conversation history
+                history = st.session_state.messages[:-1] if len(st.session_state.messages) > 1 else None
+                answer, sources, refined = rag_pipeline(user_input, framework_filter, history=history)
 
                 st.markdown(answer)
 

@@ -65,12 +65,20 @@ def extract_sections(filepath):
 
     # Find positions of each marker (case-insensitive)
     positions = []
+    missing = []
     for title, marker in SECTION_MARKERS:
         idx = content.lower().find(marker.lower())
         if idx == -1:
-            print(f"[WARN] Marker not found: {marker!r}")
+            missing.append(marker)
             continue
         positions.append((idx, title))
+
+    if missing:
+        raise RuntimeError(
+            f"The following section markers were not found in {filepath}:\n"
+            + "\n".join(f"  - {m!r}" for m in missing)
+            + "\nUpdate SECTION_MARKERS to match the file content."
+        )
 
     positions.sort(key=lambda x: x[0])
 
@@ -137,8 +145,11 @@ client.upsert(collection_name=COLLECTION, points=points)
 # =========================
 # VERIFY
 # =========================
-scroll = client.scroll(collection_name=COLLECTION, limit=20000)
+MAX_SCROLL = 20000
+scroll = client.scroll(collection_name=COLLECTION, limit=MAX_SCROLL)
 all_points = scroll[0]
+if len(all_points) == MAX_SCROLL:
+    print(f"[WARN] Scroll hit limit of {MAX_SCROLL}. Collection may have more points — stats below may be incomplete.")
 
 ref_count = sum(1 for p in all_points if p.payload.get("sheet") == SOURCE)
 print(f"\nDONE: {len(points)} reference sections upserted into '{COLLECTION}'")

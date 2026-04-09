@@ -96,8 +96,6 @@ for filename in PPTX_FILES:
         print(f"[SKIP] Not found: {filename}")
         continue
 
-    # Sheet label = short name without extension, e.g. "AIMS-IMP-03"
-    sheet_label = filename.split("-")[0] + "-" + filename.split("-")[1] + "-" + filename.split("-")[2]
     sheet_label = os.path.splitext(filename)[0]   # full name without .pptx
 
     print(f"\nProcessing: {filename}")
@@ -156,8 +154,11 @@ for filename in PPTX_FILES:
 # =========================
 # VERIFY FINAL COUNT
 # =========================
-scroll = client.scroll(collection_name=COLLECTION, limit=20000)
+MAX_SCROLL = 20000
+scroll = client.scroll(collection_name=COLLECTION, limit=MAX_SCROLL)
 all_points = scroll[0]
+if len(all_points) == MAX_SCROLL:
+    print(f"[WARN] Scroll hit limit of {MAX_SCROLL}. Collection may have more points — stats below may be incomplete.")
 
 framework_dist = {}
 for p in all_points:
